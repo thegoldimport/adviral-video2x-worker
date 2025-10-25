@@ -1,12 +1,14 @@
 """
 RunPod Serverless Handler for Video2X Video Upscaling
-Handles video download, upscaling with Video2X, and returns result
+Handles video download, upscaling with Video2X, and returns base64-encoded result
 """
+
 import runpod
 import subprocess
 import os
 import requests
 import json
+import base64
 from pathlib import Path
 
 def download_video(url: str, output_path: str) -> bool:
@@ -20,26 +22,25 @@ def download_video(url: str, output_path: str) -> bool:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
         
-        file_size = os.path.getsize(output_path)
-        print(f"Downloaded video: {file_size} bytes")
+        print(f"Downloaded successfully to: {output_path}")
         return True
     except Exception as e:
-        print(f"Error downloading video: {e}")
+        print(f"Error downloading video: {str(e)}")
         return False
 
 def upscale_video(input_path: str, output_path: str, scale: int = 4) -> bool:
-    """Upscale video using Video2X with Real-ESRGAN"""
+    """Upscale video using Video2X"""
     try:
-        print(f"Starting upscale: {input_path} -> {output_path} (scale={scale}x)")
+        print(f"Starting Video2X upscaling (scale: {scale}x)...")
         
-        # Video2X command with Real-ESRGAN
+        # Video2X command for upscaling with Real-ESRGAN
         cmd = [
-            "video2x",
+            "/usr/local/bin/video2x",
             "-i", input_path,
             "-o", output_path,
-            "-p", "realesrgan",
-            "-r", str(scale),
-            "-v", "realesr-animevideov3"
+            "-p3", "upscale",
+            "-a", "realesr-animevideov3",
+            "-s", str(scale)
         ]
         
         print(f"Running command: {' '.join(cmd)}")
@@ -48,72 +49,68 @@ def upscale_video(input_path: str, output_path: str, scale: int = 4) -> bool:
             cmd,
             capture_output=True,
             text=True,
-            timeout=300
+            timeout=300  # 5 minute timeout
         )
         
         if result.returncode != 0:
-            print(f"Video2X error: {result.stderr}")
+            print(f"Video2X error (stderr): {result.stderr}")
+            print(f"Video2X error (stdout): {result.stdout}")
             return False
         
-        if not os.path.exists(output_path):
-            print("Output file not created")
-            return False
-        
-        output_size = os.path.getsize(output_path)
-        print(f"Upscaled video created: {output_size} bytes")
+        print("Video2X upscaling completed successfully")
         return True
         
     except subprocess.TimeoutExpired:
-        print("Upscaling timed out after 5 minutes")
+        print("Video2X process timed out after 5 minutes")
         return False
     except Exception as e:
-        print(f"Error upscaling video: {e}")
+        print(f"Error during upscaling: {str(e)}")
         return False
 
-def handler(event):
-    """RunPod serverless handler"""
+def handler(job):
+    """Main RunPod handler function"""
     try:
-        input_data = event.get("input", {})
-        video_url = input_data.get("video_url")
-        scale = input_data.get("scale", 4)
+        job_input = job['input']
+        video_url = job_input.get('video_url')
+        scale = job_input.get('scale', 4)
         
         if not video_url:
-            return {"error": "Missing video_url parameter"}
+            return {"error": "video_url is required"}
         
-        workspace = Path("/workspace")
-        workspace.mkdir(exist_ok=True)
+        # Create temp directory
+        work_dir = Path("/workspace/temp")
+        work_dir.mkdir(exist_ok=True)
         
-        input_path = workspace / "input.mp4"
-        output_path = workspace / "output.mp4"
+        # Define file paths
+        input_video = work_dir / "input.mp4"
+        output_video = work_dir / "output.mp4"
         
-        for path in [input_path, output_path]:
-            if path.exists():
-                path.unlink()
-        
-        if not download_video(video_url, str(input_path)):
+        # Download video
+        if not download_video(video_url, str(input_video)):
             return {"error": "Failed to download video"}
         
-        if not upscale_video(str(input_path), str(output_path), scale):
+        # Upscale video
+        if not upscale_video(str(input_video), str(output_video), scale):
             return {"error": "Failed to upscale video"}
         
-        import base64
-        with open(output_path, "rb") as f:
-            video_bytes = f.read()
-            video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+        # Read upscaled video and encode to base64
+        print("Encoding video to base64...")
+        with open(output_video, 'rb') as f:
+            video_data = base64.b64encode(f.read()).decode('utf-8')
         
-        input_path.unlink()
-        output_path.unlink()
+        # Cleanup
+        input_video.unlink(missing_ok=True)
+        output_video.unlink(missing_ok=True)
+        
+        print("Job completed successfully!")
         
         return {
-            "video_data": video_base64,
-            "status": "success",
-            "upscaled_size": len(video_bytes)
+            "video_data": video_data,
+            "status": "success"
         }
         
     except Exception as e:
         print(f"Handler error: {str(e)}")
-        import traceback
-        traceback.print_exc()
         return {"error": str(e)}
 
 if __name__ == "__main__":
