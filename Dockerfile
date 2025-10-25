@@ -1,11 +1,14 @@
-FROM k4yt3x/video2x:6.0.0
+FROM ghcr.io/k4yt3x/video2x:latest
 
-RUN pip install --no-cache-dir runpod requests
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /workspace
+RUN pip3 install --no-cache-dir runpod requests
 
 COPY handler.py /handler.py
 
 WORKDIR /workspace
 
-CMD ["python", "-u", "/handler.py"]
+CMD ["python3", "-u", "/handler.py"]
