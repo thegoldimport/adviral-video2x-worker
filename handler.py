@@ -1,15 +1,13 @@
 """
 RunPod Serverless Handler for Video2X Video Upscaling
-Handles video download, upscaling with Video2X, and returns base64-encoded result
 """
 
 import runpod
-import subprocess
 import os
 import requests
-import json
 import base64
 from pathlib import Path
+import subprocess
 
 def download_video(url: str, output_path: str) -> bool:
     """Download video from URL to local path"""
@@ -29,13 +27,13 @@ def download_video(url: str, output_path: str) -> bool:
         return False
 
 def upscale_video(input_path: str, output_path: str, scale: int = 4) -> bool:
-    """Upscale video using Video2X"""
+    """Upscale video using Video2X CLI"""
     try:
         print(f"Starting Video2X upscaling (scale: {scale}x)...")
         
-        # Video2X command for upscaling with Real-ESRGAN
+        # Use video2x CLI command
         cmd = [
-            "/usr/local/bin/video2x",
+            "video2x",
             "-i", input_path,
             "-o", output_path,
             "-p3", "upscale",
@@ -49,22 +47,24 @@ def upscale_video(input_path: str, output_path: str, scale: int = 4) -> bool:
             cmd,
             capture_output=True,
             text=True,
-            timeout=300  # 5 minute timeout
+            timeout=300
         )
         
         if result.returncode != 0:
-            print(f"Video2X error (stderr): {result.stderr}")
-            print(f"Video2X error (stdout): {result.stdout}")
+            print(f"video2x stderr: {result.stderr}")
+            print(f"video2x stdout: {result.stdout}")
             return False
         
         print("Video2X upscaling completed successfully")
         return True
         
     except subprocess.TimeoutExpired:
-        print("Video2X process timed out after 5 minutes")
+        print("Video2X process timed out")
         return False
     except Exception as e:
         print(f"Error during upscaling: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def handler(job):
@@ -93,6 +93,10 @@ def handler(job):
         if not upscale_video(str(input_video), str(output_video), scale):
             return {"error": "Failed to upscale video"}
         
+        # Check if output exists
+        if not output_video.exists():
+            return {"error": "Output video not created"}
+        
         # Read upscaled video and encode to base64
         print("Encoding video to base64...")
         with open(output_video, 'rb') as f:
@@ -111,6 +115,8 @@ def handler(job):
         
     except Exception as e:
         print(f"Handler error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {"error": str(e)}
 
 if __name__ == "__main__":
