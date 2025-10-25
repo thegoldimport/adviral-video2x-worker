@@ -7,10 +7,13 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Real-ESRGAN
+# Install NumPy 1.x (fix compatibility issue)
+RUN pip install --no-cache-dir "numpy<2"
+
+# Install Real-ESRGAN and dependencies
 RUN pip install --no-cache-dir realesrgan basicsr facexlib gfpgan
 
-# Install RunPod SDK
+# Install RunPod SDK and OpenCV
 RUN pip install --no-cache-dir runpod requests opencv-python-headless
 
 # Download Real-ESRGAN model
