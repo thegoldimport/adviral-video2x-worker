@@ -1,21 +1,10 @@
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+FROM ghcr.io/k4yt3x/video2x:latest
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install Python and dependencies
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    wget \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+# Install Python for RunPod handler
+RUN apk add --no-cache python3 py3-pip
 
 # Install RunPod SDK
-RUN pip3 install --no-cache-dir runpod requests
-
-# Download and install Video2X binary
-RUN wget https://github.com/k4yt3x/video2x/releases/download/6.4.0/video2x-linux-amd64 -O /usr/local/bin/video2x && \
-    chmod +x /usr/local/bin/video2x
+RUN pip3 install --no-cache-dir --break-system-packages runpod requests
 
 # Copy handler
 COPY handler.py /handler.py
