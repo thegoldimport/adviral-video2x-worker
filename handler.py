@@ -1,13 +1,13 @@
 """
-RunPod Serverless Handler for Video2X Video Upscaling
+RunPod Serverless Handler for Real-ESRGAN Video Upscaling
 """
 
 import runpod
 import os
 import requests
 import base64
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 def download_video(url: str, output_path: str) -> bool:
     """Download video from URL to local path"""
@@ -20,101 +20,121 @@ def download_video(url: str, output_path: str) -> bool:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
         
-        print(f"Downloaded successfully to: {output_path}")
+        print(f"Downloaded successfully")
         return True
     except Exception as e:
-        print(f"Error downloading video: {str(e)}")
+        print(f"Error downloading: {str(e)}")
         return False
 
-def upscale_video(input_path: str, output_path: str, scale: int = 4) -> bool:
-    """Upscale video using Video2X CLI"""
+def extract_frames(video_path: str, frames_dir: str) -> bool:
+    """Extract frames from video using FFmpeg"""
     try:
-        print(f"Starting Video2X upscaling (scale: {scale}x)...")
-        
-        # Use video2x CLI command
+        Path(frames_dir).mkdir(exist_ok=True)
         cmd = [
-            "video2x",
-            "-i", input_path,
-            "-o", output_path,
-            "-p3", "upscale",
-            "-a", "realesr-animevideov3",
-            "-s", str(scale)
+            "ffmpeg", "-i", video_path,
+            "-qscale:v", "1", "-qmin", "1", "-qmax", "1",
+            f"{frames_dir}/frame%08d.png"
         ]
-        
-        print(f"Running command: {' '.join(cmd)}")
-        
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=300
-        )
-        
-        if result.returncode != 0:
-            print(f"video2x stderr: {result.stderr}")
-            print(f"video2x stdout: {result.stdout}")
-            return False
-        
-        print("Video2X upscaling completed successfully")
-        return True
-        
-    except subprocess.TimeoutExpired:
-        print("Video2X process timed out")
-        return False
+        result = subprocess.run(cmd, capture_output=True, timeout=60)
+        return result.returncode == 0
     except Exception as e:
-        print(f"Error during upscaling: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"Frame extraction error: {e}")
+        return False
+
+def upscale_frames(input_dir: str, output_dir: str) -> bool:
+    """Upscale frames using Real-ESRGAN"""
+    try:
+        Path(output_dir).mkdir(exist_ok=True)
+        cmd = [
+            "python", "-m", "realesrgan.inference_realesrgan",
+            "-i", input_dir,
+            "-o", output_dir,
+            "-n", "realesr-animevideov3",
+            "-s", "4",
+            "--model_path", "/workspace/models/realesr-animevideov3.pth",
+            "--fp32"
+        ]
+        print(f"Running Real-ESRGAN...")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
+        if result.returncode != 0:
+            print(f"Real-ESRGAN error: {result.stderr}")
+            return False
+        return True
+    except Exception as e:
+        print(f"Upscaling error: {e}")
+        return False
+
+def rebuild_video(frames_dir: str, output_path: str, original_video: str) -> bool:
+    """Rebuild video from upscaled frames"""
+    try:
+        # Get original framerate
+        probe_cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=r_frame_rate",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            original_video
+        ]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        fps = eval(result.stdout.strip())  # e.g., "30/1" -> 30.0
+        
+        # Rebuild video
+        cmd = [
+            "ffmpeg", "-framerate", str(fps),
+            "-i", f"{frames_dir}/frame%08d_out.png",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-crf", "18", output_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=60)
+        return result.returncode == 0
+    except Exception as e:
+        print(f"Video rebuild error: {e}")
         return False
 
 def handler(job):
-    """Main RunPod handler function"""
+    """Main RunPod handler"""
     try:
-        job_input = job['input']
-        video_url = job_input.get('video_url')
-        scale = job_input.get('scale', 4)
-        
+        video_url = job['input'].get('video_url')
         if not video_url:
-            return {"error": "video_url is required"}
+            return {"error": "video_url required"}
         
-        # Create temp directory
         work_dir = Path("/workspace/temp")
         work_dir.mkdir(exist_ok=True)
         
-        # Define file paths
         input_video = work_dir / "input.mp4"
+        frames_dir = work_dir / "frames"
+        upscaled_dir = work_dir / "upscaled"
         output_video = work_dir / "output.mp4"
         
-        # Download video
+        # Download
         if not download_video(video_url, str(input_video)):
-            return {"error": "Failed to download video"}
+            return {"error": "Download failed"}
         
-        # Upscale video
-        if not upscale_video(str(input_video), str(output_video), scale):
-            return {"error": "Failed to upscale video"}
+        # Extract frames
+        print("Extracting frames...")
+        if not extract_frames(str(input_video), str(frames_dir)):
+            return {"error": "Frame extraction failed"}
         
-        # Check if output exists
-        if not output_video.exists():
-            return {"error": "Output video not created"}
+        # Upscale
+        print("Upscaling frames...")
+        if not upscale_frames(str(frames_dir), str(upscaled_dir)):
+            return {"error": "Upscaling failed"}
         
-        # Read upscaled video and encode to base64
-        print("Encoding video to base64...")
+        # Rebuild
+        print("Rebuilding video...")
+        if not rebuild_video(str(upscaled_dir), str(output_video), str(input_video)):
+            return {"error": "Video rebuild failed"}
+        
+        # Encode to base64
+        print("Encoding result...")
         with open(output_video, 'rb') as f:
             video_data = base64.b64encode(f.read()).decode('utf-8')
         
-        # Cleanup
-        input_video.unlink(missing_ok=True)
-        output_video.unlink(missing_ok=True)
-        
-        print("Job completed successfully!")
-        
-        return {
-            "video_data": video_data,
-            "status": "success"
-        }
+        print("Success!")
+        return {"video_data": video_data, "status": "success"}
         
     except Exception as e:
-        print(f"Handler error: {str(e)}")
+        print(f"Handler error: {e}")
         import traceback
         traceback.print_exc()
         return {"error": str(e)}
