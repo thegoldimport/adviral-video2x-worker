@@ -1,25 +1,30 @@
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+name: Build and Push Docker Image
 
-ENV DEBIAN_FRONTEND=noninteractive
+on:
+  push:
+    branches: [ main ]
 
-# Install Python and dependencies
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    wget \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install RunPod SDK
-RUN pip3 install --no-cache-dir runpod requests
-
-# Download and install Video2X binary
-RUN wget https://github.com/k4yt3x/video2x/releases/download/6.4.0/video2x-linux-amd64 -O /usr/local/bin/video2x && \
-    chmod +x /usr/local/bin/video2x
-
-# Copy handler
-COPY handler.py /handler.py
-
-WORKDIR /workspace
-
-CMD ["python3", "-u", "/handler.py"]
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
