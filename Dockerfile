@@ -1,4 +1,4 @@
-# Use NVIDIA's official CUDA runtime (much smaller than devel)
+# Use NVIDIA's official CUDA runtime (lightweight GPU image)
 FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -14,14 +14,22 @@ RUN apt-get update && apt-get install -y \
 # Set Python as default
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
 
-# Install Python dependencies
+# Install compatible PyTorch + torchvision FIRST
+RUN pip install --no-cache-dir \
+    torch==2.0.1 \
+    torchvision==0.15.2 \
+    --index-url https://download.pytorch.org/whl/cu118
+
+# Install other dependencies
 RUN pip install --no-cache-dir \
     opencv-python-headless==4.8.1.78 \
     numpy==1.24.3 \
     Pillow==10.0.1 \
-    realesrgan==0.3.0 \
     requests \
     runpod==1.6.2
+
+# Install Real-ESRGAN (will use already-installed PyTorch)
+RUN pip install --no-cache-dir realesrgan==0.3.0
 
 # Create workspace and models directory
 RUN mkdir -p /workspace/models
