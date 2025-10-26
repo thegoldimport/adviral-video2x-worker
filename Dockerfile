@@ -7,15 +7,20 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# FORCE uninstall NumPy 2.x and install NumPy 1.x
+# CRITICAL: Force reinstall NumPy 1.x and all dependencies
 RUN pip uninstall -y numpy && \
-    pip install --no-cache-dir "numpy<2"
+    pip install --force-reinstall --no-cache-dir "numpy==1.26.4"
 
-# Install Real-ESRGAN and dependencies
-RUN pip install --no-cache-dir realesrgan basicsr facexlib gfpgan
+# Reinstall Real-ESRGAN with NumPy 1.x
+RUN pip install --force-reinstall --no-cache-dir \
+    realesrgan \
+    basicsr \
+    facexlib \
+    gfpgan \
+    opencv-python-headless
 
-# Install RunPod SDK and OpenCV
-RUN pip install --no-cache-dir runpod requests opencv-python-headless
+# Install RunPod SDK
+RUN pip install --no-cache-dir runpod requests
 
 # Download Real-ESRGAN model
 RUN mkdir -p /workspace/models && \
