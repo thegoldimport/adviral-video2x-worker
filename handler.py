@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 from pathlib import Path
 from realesrgan import RealESRGANer
-from basicsr.archs.rrdbnet_arch import RRDBNet
+from realesrgan.archs.srvgg_arch import SRVGGNetCompact
 
 def download_video(url: str, output_path: str) -> bool:
     """Download video from URL to local path"""
@@ -83,9 +83,9 @@ def upscale_frames(frames_dir: str, output_dir: str, scale: int = 4) -> bool:
         print(f"Upscaling frames (scale: {scale}x)...")
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         
-        # Initialize Real-ESRGAN model
+        # Initialize Real-ESRGAN model with correct architecture for animevideov3
         model_path = "/workspace/models/realesr-animevideov3.pth"
-        model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=6, num_grow_ch=32, scale=4)
+        model = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=16, upscale=4, act_type='prelu')
         
         upsampler = RealESRGANer(
             scale=4,
