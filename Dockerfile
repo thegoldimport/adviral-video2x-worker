@@ -1,5 +1,5 @@
-# Use RunPod's lightweight serverless GPU base (<10GB total)
-FROM runpod/serverless-gpu:cu118-py3.10
+# Use RunPod's runtime base (lighter than devel, ~10-12GB)
+FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-runtime-ubuntu22.04
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -13,7 +13,8 @@ RUN pip install --no-cache-dir \
     numpy==1.24.3 \
     Pillow==10.0.1 \
     realesrgan==0.3.0 \
-    requests
+    requests \
+    runpod
 
 # Create workspace and models directory
 RUN mkdir -p /workspace/models
