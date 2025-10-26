@@ -37,30 +37,17 @@ def extract_frames(video_path: str, frames_dir: str) -> tuple:
         print("Extracting frames...")
         Path(frames_dir).mkdir(parents=True, exist_ok=True)
         
-        # Extract frames as PNG
-        cmd = [
-            "ffmpeg", "-i", video_path,
-            "-qscale:v", "1",
-            f"{frames_dir}/frame_%04d.png"
-        ]
+        cmd = ["ffmpeg", "-i", video_path, "-qscale:v", "1", f"{frames_dir}/frame_%04d.png"]
         
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode != 0:
             print(f"FFmpeg extract error: {result.stderr}")
             return 0, 0.0
         
-        # Get frame count and FPS
         frames = list(Path(frames_dir).glob("frame_*.png"))
         frame_count = len(frames)
         
-        # Get FPS
-        fps_cmd = [
-            "ffprobe", "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=r_frame_rate",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            video_path
-        ]
+        fps_cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", "default=noprint_wrappers=1:nokey=1", video_path]
         fps_result = subprocess.run(fps_cmd, capture_output=True, text=True)
         fps_str = fps_result.stdout.strip()
         
@@ -83,22 +70,11 @@ def upscale_frames(frames_dir: str, output_dir: str, scale: int = 4) -> bool:
         print(f"Upscaling frames (scale: {scale}x)...")
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         
-        # Initialize Real-ESRGAN model with correct architecture for animevideov3
         model_path = "/workspace/models/realesr-animevideov3.pth"
         model = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=16, upscale=4, act_type='prelu')
         
-        upsampler = RealESRGANer(
-            scale=4,
-            model_path=model_path,
-            model=model,
-            tile=0,
-            tile_pad=10,
-            pre_pad=0,
-            half=True,
-            gpu_id=0
-        )
+        upsampler = RealESRGANer(scale=4, model_path=model_path, model=model, tile=0, tile_pad=10, pre_pad=0, half=True, gpu_id=0)
         
-        # Process each frame
         frames = sorted(Path(frames_dir).glob("frame_*.png"))
         total = len(frames)
         
@@ -133,33 +109,14 @@ def rebuild_video(frames_dir: str, output_path: str, original_video: str, fps: f
         temp_video = "/workspace/temp/video_no_audio.mp4"
         Path(temp_video).parent.mkdir(parents=True, exist_ok=True)
         
-        cmd = [
-            "ffmpeg", "-y",
-            "-framerate", str(fps),
-            "-i", f"{frames_dir}/frame_%04d.png",
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-crf", "18",
-            temp_video
-        ]
+        cmd = ["ffmpeg", "-y", "-framerate", str(fps), "-i", f"{frames_dir}/frame_%04d.png", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", temp_video]
         
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0:
             print(f"FFmpeg rebuild error: {result.stderr}")
             return False
         
-        # Merge audio from original video
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", temp_video,
-            "-i", original_video,
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-map", "0:v:0",
-            "-map", "1:a:0?",
-            "-shortest",
-            output_path
-        ]
+        cmd = ["ffmpeg", "-y", "-i", temp_video, "-i", original_video, "-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0?", "-shortest", output_path]
         
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode != 0:
@@ -195,7 +152,6 @@ def handler(event):
         frames_dir = workspace / "frames"
         upscaled_dir = workspace / "upscaled"
         
-        # Clean up previous run
         for path in [input_video, output_video]:
             if path.exists():
                 path.unlink()
@@ -204,40 +160,29 @@ def handler(event):
                 import shutil
                 shutil.rmtree(dir_path)
         
-        # Download video
         if not download_video(video_url, str(input_video)):
             return {"error": "Failed to download video"}
         
-        # Extract frames
         frame_count, fps = extract_frames(str(input_video), str(frames_dir))
         if frame_count == 0:
             return {"error": "Failed to extract frames"}
         
-        # Upscale frames
         if not upscale_frames(str(frames_dir), str(upscaled_dir), scale):
             return {"error": "Failed to upscale frames"}
         
-        # Rebuild video
         if not rebuild_video(str(upscaled_dir), str(output_video), str(input_video), fps):
             return {"error": "Failed to rebuild video"}
         
-        # Encode as base64
         with open(output_video, "rb") as f:
             video_bytes = f.read()
             video_base64 = base64.b64encode(video_bytes).decode('utf-8')
         
-        # Cleanup
         import shutil
         shutil.rmtree(workspace)
         
         print("Upscaling completed successfully!")
         
-        return {
-            "video_data": video_base64,
-            "status": "success",
-            "frames_processed": frame_count,
-            "output_size": len(video_bytes)
-        }
+        return {"video_data": video_base64, "status": "success", "frames_processed": frame_count, "output_size": len(video_bytes)}
         
     except Exception as e:
         print(f"Handler error: {e}")
