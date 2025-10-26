@@ -7,8 +7,9 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install NumPy 1.x (fix compatibility issue)
-RUN pip install --no-cache-dir "numpy<2"
+# FORCE uninstall NumPy 2.x and install NumPy 1.x
+RUN pip uninstall -y numpy && \
+    pip install --no-cache-dir "numpy<2"
 
 # Install Real-ESRGAN and dependencies
 RUN pip install --no-cache-dir realesrgan basicsr facexlib gfpgan
